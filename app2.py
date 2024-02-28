@@ -62,7 +62,7 @@ def get_first_non_empty_column(file_path):
 
 # Function to create a SQLite database and insert data
 def create_and_insert_into_db(data, cleaned_data, prediction, x):
-    db_path = 'data_clean1.db'
+    db_path = 'clean_data_training.db'
 
     # Using with statement for SQLite connection
     with sqlite3.connect(db_path) as conn:
@@ -197,23 +197,23 @@ def cleansing_model (data_input,i ):
     return cleaned_texts
 
 # Load the trained vectorizer and model
-vectorizer = pickle.load(open("feature.p", "rb"))
-model = pickle.load(open("model.p", "rb"))
+vectorizer_nn = pickle.load(open("feature_nn.p", "rb"))
+model_nn = pickle.load(open("model_nn.p", "rb"))
 
 # =========================================================================
 
 # PREDICTION MODEL Neural-Network
-def prediction_sentiment_NN(text_bersih, vectorizer, model, y):
+def prediction_sentiment_NN(text_bersih, vectorizer_nn, model_nn, y):
 
     # processed_text = cleansing_model(text)
     # Vectorize the preprocessed text
     
     if y==1 :
-        text_vectorized = vectorizer.transform([text_bersih])
-        sentiment = model.predict(text_vectorized)[0]
+        text_vectorized = vectorizer_nn.transform([text_bersih])
+        sentiment = model_nn.predict(text_vectorized)[0]
     if y==2 :
-        text_vectorized = vectorizer.transform(text_bersih)
-        sentiment = model.predict(text_vectorized)
+        text_vectorized = vectorizer_nn.transform(text_bersih)
+        sentiment = model_nn.predict(text_vectorized)
     return sentiment
 
 @app.route('/')
@@ -226,7 +226,7 @@ def text_processing():
 
     text_p = request.form.get('text')
     processed_text = cleansing_model(text_p, 1)
-    prediction = prediction_sentiment_NN(processed_text,vectorizer, model, 1)
+    prediction = prediction_sentiment_NN(processed_text,vectorizer_nn, model_nn, 1)
 
     #HOW TO DO THE DATABASE?
     create_and_insert_into_db(text_p, processed_text, prediction, 1)
