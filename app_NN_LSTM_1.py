@@ -140,7 +140,7 @@ def stopwordsremoval(text):
     list_stopwords = list_stopwords_id + list_stopwords_en
 
     # Specify words to retain
-    words_to_retain = ['tidak']  # Add more words as needed (kurang, baik)
+    words_to_retain = ['tidak', 'baik', 'kurang']  # Add more words as needed (kurang, baik)
 
     # Remove stopwords from the tokenized text, except words to retain
     tokens_without_stopword = [word for word in freq_tokens if word not in list_stopwords or word in words_to_retain]
@@ -225,44 +225,38 @@ def prediction_sentiment_NN(text_bersih, vectorizer, model, y):
 
 # Load the trained vectorizer and model LSTM
 sentiment = ['negative', 'neutral', 'positive']
-model_LSTM = load_model('model1.h5')  # -->> bisa ganti model
 
-# Load tokenizer from tokenizer.pickle
-with open('tokenizer.pickle', 'rb') as handle:
-    tokenizer = pickle.load(handle)
-
-# Load X from x_pad_sequences.pickle
-with open('x_pad_sequences.pickle', 'rb') as handle:
-    X = pickle.load(handle)
-
-# Assuming total_data is the list of texts used to fit the tokenizer
-maxlen = max(len(x) for x in X)
-max_features = len(tokenizer.word_index)
+model_LSTM = load_model('model.h5')  # -->> bisa ganti model
 
 # PREDICTION OF MODEL LSTM 
 def prediction_sentiment_LSTM(text_bersih, model, z):
+    # Load tokenizer from tokenizer.pickle
+    with open('tokenizer.pickle', 'rb') as handle:
+        tokenizer = pickle.load(handle)
+
+    # Load X from x_pad_sequences.pickle
+    with open('x_pad_sequences.pickle', 'rb') as handle:
+        X = pickle.load(handle)
+
     predicted_sentiments = []
     if z == 1 :
         predicted = tokenizer.texts_to_sequences(text_bersih)
         guess = pad_sequences(predicted, maxlen=X.shape[1])
 
-        model = load_model('model1.h5')
         prediction = model.predict(guess)
         polarity = np.argmax(prediction[0])
         predicted_sentiments = sentiment[polarity]
 
     elif z == 2 : 
         for text in text_bersih:
-            predicted = tokenizer.texts_to_sequences([text_bersih])
+            predicted = tokenizer.texts_to_sequences([text])
             guess = pad_sequences(predicted, maxlen=X.shape[1])
 
-            model = load_model('model1.h5')
             prediction = model.predict(guess)
             polarity = np.argmax(prediction[0])
             predicted_sentiments.append(sentiment[polarity])
 
     return predicted_sentiments
-
 # =========================================================================
 
 @app.route('/')
