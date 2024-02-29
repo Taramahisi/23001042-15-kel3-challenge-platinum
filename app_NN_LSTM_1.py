@@ -1,4 +1,3 @@
-# no gold challenge cleansing
 
 import tempfile
 import os
@@ -98,7 +97,7 @@ def create_and_insert_into_db(data, cleaned_data, prediction, x):
 # delete words/char
 def remove_unnecessary_char(text):
     text = re.sub('\n',' ',text) # Remove every '\n'
-    text = re.sub('rt',' ',text) # Remove every reTweet symbol
+    text = re.sub('"rt"',' ',text) # Remove every reTweet symbol
     text = re.sub('user',' ',text) # Remove every username
     text = text.strip() #menghapus spasi di awal dan akhir
     text = re.sub(r'\n', ' ', text, flags=re.IGNORECASE)
@@ -180,10 +179,56 @@ def replace_kamusalay(text1):
 
     return processed_text
 
-# CLEANSING1 for model prediction 
+# func. Remove abusive words
+def remove_abusive(data_input):
+    # buka file abusive 
+    with open('Data/Data klasifikasi/abusive.csv', 'r') as csv_file:
+        remove_words = [row[0] for row in csv.reader(csv_file)]    
+    # Escape special characters in the words
+    remove_words_escaped = [re.escape(word) for word in remove_words]
+    # Create a pattern to match common emoticons and specific words to remove
+    pattern_to_remove = re.compile('|'.join(remove_words_escaped))
+
+    # Remove abusive words from the text 
+    processed_text = re.sub(pattern_to_remove, ' ', data_input).strip()
+    # Remove extraspace
+    processed_text = re.sub(r'\s+', ' ', processed_text).strip()
+
+    return processed_text
+
+# ================== CLEANSING for output   ==========================
+# No stemming and stop words removal, add remove abusive words
+
+def cleansing_ouput (data_input,i ):
+
+    # Teks cleansing output
+    if i == 1:  
+        text1 = data_input.lower()
+        text1 = remove_unnecessary_char(text1)
+        text1 = remove_words_starting_with_x(text1)
+        text1 = replace_kamusalay(text1)
+        cleaned_texts = remove_abusive(text1)
+
+    # File cleansing output 
+    if i ==2:
+        cleaned_texts = []
+        for text in data_input:
+            text1 = text.lower()
+            text1 = remove_unnecessary_char(text1)
+            text1 = remove_words_starting_with_x(text1)
+            text1 = replace_kamusalay(text1)
+            text1 = remove_abusive(text1)
+            cleaned_texts.append(text1)
+
+    return cleaned_texts
+
+# ================== CLEANSING for model prediction   ==========================
+# No abusive words removal
+
 def cleansing_model (data_input,i ):
 
-    if i == 1:
+    # Teks cleansing model
+    if i == 1:  
         text1 = data_input.lower()
         text1 = remove_unnecessary_char(text1)
         text1 = remove_words_starting_with_x(text1)
@@ -191,6 +236,7 @@ def cleansing_model (data_input,i ):
         text1 = stopwordsremoval(text1)
         cleaned_texts = stemming_words(text1)
 
+    # File cleansing model 
     if i ==2:
         cleaned_texts = []
         for text in data_input:
@@ -204,11 +250,11 @@ def cleansing_model (data_input,i ):
 
     return cleaned_texts
 
+# ================== Neural-Network   ==========================
+
 # Load the trained vectorizer and model NN 
 vectorizer = pickle.load(open("feature.p", "rb"))
-model_NN = pickle.load(open("model.p", "rb"))
-
-# =========================================================================
+model_NN = pickle.load(open("model.p", "rb"))  # -->> bisa ganti model
 
 # PREDICTION MODEL Neural-Network
 def prediction_sentiment_NN(text_bersih, vectorizer, model, y):
@@ -221,33 +267,32 @@ def prediction_sentiment_NN(text_bersih, vectorizer, model, y):
         sentiment = model.predict(text_vectorized)
     return sentiment
 
-# =========================================================================
+# ===================    LSTM    ==================================
 
 # Load the trained vectorizer and model LSTM
 sentiment = ['negative', 'neutral', 'positive']
-
-model_LSTM = load_model('model.h5')  # -->> bisa ganti model
+model_LSTM = load_model('model_lstm.h5')  # -->> bisa ganti model
 
 # PREDICTION OF MODEL LSTM 
 def prediction_sentiment_LSTM(text_bersih, model, z):
     # Load tokenizer from tokenizer.pickle
-    with open('tokenizer.pickle', 'rb') as handle:
+    with open('tokenizer_lstm.pickle', 'rb') as handle:
         tokenizer = pickle.load(handle)
 
     # Load X from x_pad_sequences.pickle
-    with open('x_pad_sequences.pickle', 'rb') as handle:
+    with open('x_pad_sequences_lstm.pickle', 'rb') as handle:
         X = pickle.load(handle)
 
     predicted_sentiments = []
-    if z == 1 :
-        predicted = tokenizer.texts_to_sequences(text_bersih)
+    if z == 1 :     # Text processing
+        predicted = tokenizer.texts_to_sequences([text_bersih])
         guess = pad_sequences(predicted, maxlen=X.shape[1])
 
         prediction = model.predict(guess)
         polarity = np.argmax(prediction[0])
         predicted_sentiments = sentiment[polarity]
 
-    elif z == 2 : 
+    elif z == 2 :   # File processing 
         for text in text_bersih:
             predicted = tokenizer.texts_to_sequences([text])
             guess = pad_sequences(predicted, maxlen=X.shape[1])
@@ -257,6 +302,7 @@ def prediction_sentiment_LSTM(text_bersih, model, z):
             predicted_sentiments.append(sentiment[polarity])
 
     return predicted_sentiments
+
 # =========================================================================
 
 @app.route('/')
@@ -269,16 +315,17 @@ def text_processing_NN():
 
     text_p = request.form.get('text')
     processed_text = cleansing_model(text_p, 1)
+    clean_text = cleansing_ouput(text_p, 1)
     prediction = prediction_sentiment_NN(processed_text, vectorizer, model_NN, 1)
 
     #HOW TO DO THE DATABASE?
-    create_and_insert_into_db(text_p, processed_text, prediction, 1)
+    create_and_insert_into_db(text_p, clean_text, prediction, 1)
 
     json_response = {
         'status_code': 200,
         'description': "Teks yang sudah diproses",
         'data': text_p, 
-        'clean_data' : processed_text,
+        'clean_data' : clean_text,
         'Sentiment' : prediction.tolist(),
     }
 
@@ -292,16 +339,17 @@ def text_processing_LSTM():
 
     text_p = request.form.get('text')
     processed_text = cleansing_model(text_p, 1)
+    clean_text = cleansing_ouput(text_p, 1)
     prediction = prediction_sentiment_LSTM(processed_text, model_LSTM, 1)
 
     #HOW TO DO THE DATABASE?
-    create_and_insert_into_db(text_p, processed_text, prediction, 1)
+    create_and_insert_into_db(text_p, clean_text, prediction, 1)
 
     json_response = {
         'status_code': 200,
         'description': "Teks yang sudah diproses",
         'data': text_p, 
-        'clean_data' : processed_text,
+        'clean_data' : clean_text,
         'Sentiment' : prediction,
     }
 
@@ -338,11 +386,12 @@ def text_processing_file_NN():
         raw_text.extend(texts)
         
         # Perform cleansing on texts
-        cleaned_chunk = cleansing_model(texts, 2)
+        cleaned_chunk_model = cleansing_model(texts, 2)
+        cleaned_chunk = cleansing_ouput(texts, 2)
         cleaned_text.extend(cleaned_chunk)
         
         # Predict sentiment for each cleaned text chunk
-        chunk_predictions = prediction_sentiment_NN(cleaned_chunk, vectorizer, model_NN, 2)
+        chunk_predictions = prediction_sentiment_NN(cleaned_chunk_model, vectorizer, model_NN, 2)
         predict_file.extend(chunk_predictions)
     
     # Store cleaned data into the SQLite database
@@ -391,11 +440,12 @@ def text_processing_file_LSTM():
         raw_text.extend(texts)
         
         # Perform cleansing on texts
-        cleaned_chunk = cleansing_model(texts, 2)
+        cleaned_chunk_model = cleansing_model(texts, 2)
+        cleaned_chunk = cleansing_ouput(texts, 2)
         cleaned_text.extend(cleaned_chunk)
         
         # Predict sentiment for each cleaned text chunk
-        chunk_predictions = prediction_sentiment_LSTM(cleaned_chunk, model_LSTM, 2)
+        chunk_predictions = prediction_sentiment_LSTM(cleaned_chunk_model, model_LSTM, 2)
         predict_file.extend(chunk_predictions)
     
     # Store cleaned data into the SQLite database
