@@ -1,4 +1,3 @@
-# no gold challenge cleansing
 
 import tempfile
 import os
@@ -7,6 +6,7 @@ import re
 import pandas as pd
 import sqlite3
 import pickle
+import numpy as np
 from flask import Flask, jsonify
 import nltk
 from nltk.corpus import stopwords
@@ -15,6 +15,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.neural_network import MLPClassifier # Neural-Network Model library
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
+from keras.models import load_model
+
+import pickle
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+
 # create stemmer
 factory = StemmerFactory()
 stemmer = factory.create_stemmer()
@@ -62,7 +69,7 @@ def get_first_non_empty_column(file_path):
 
 # Function to create a SQLite database and insert data
 def create_and_insert_into_db(data, cleaned_data, prediction, x):
-    db_path = 'clean_data_training.db'
+    db_path = 'data_clean1.db'
 
     # Using with statement for SQLite connection
     with sqlite3.connect(db_path) as conn:
@@ -132,7 +139,7 @@ def stopwordsremoval(text):
     list_stopwords = list_stopwords_id + list_stopwords_en
 
     # Specify words to retain
-    words_to_retain = ['tidak']  # Add more words as needed
+    words_to_retain = ['tidak', 'baik', 'kurang']  # Add more words as needed (kurang, baik)
 
     # Remove stopwords from the tokenized text, except words to retain
     tokens_without_stopword = [word for word in freq_tokens if word not in list_stopwords or word in words_to_retain]
@@ -172,10 +179,56 @@ def replace_kamusalay(text1):
 
     return processed_text
 
-# CLEANSING1 for model prediction 
+# func. Remove abusive words
+def remove_abusive(data_input):
+    # buka file abusive 
+    with open('Data/Data klasifikasi/abusive.csv', 'r') as csv_file:
+        remove_words = [row[0] for row in csv.reader(csv_file)]    
+    # Escape special characters in the words
+    remove_words_escaped = [re.escape(word) for word in remove_words]
+    # Create a pattern to match common emoticons and specific words to remove
+    pattern_to_remove = re.compile('|'.join(remove_words_escaped))
+
+    # Remove abusive words from the text 
+    processed_text = re.sub(pattern_to_remove, ' ', data_input).strip()
+    # Remove extraspace
+    processed_text = re.sub(r'\s+', ' ', processed_text).strip()
+
+    return processed_text
+
+# ================== CLEANSING for output   ==========================
+# No stemming and stop words removal, add remove abusive words
+
+def cleansing_ouput (data_input,i ):
+
+    # Teks cleansing output
+    if i == 1:  
+        text1 = data_input.lower()
+        text1 = remove_unnecessary_char(text1)
+        text1 = remove_words_starting_with_x(text1)
+        text1 = replace_kamusalay(text1)
+        cleaned_texts = remove_abusive(text1)
+
+    # File cleansing output 
+    if i ==2:
+        cleaned_texts = []
+        for text in data_input:
+            text1 = text.lower()
+            text1 = remove_unnecessary_char(text1)
+            text1 = remove_words_starting_with_x(text1)
+            text1 = replace_kamusalay(text1)
+            text1 = remove_abusive(text1)
+            cleaned_texts.append(text1)
+
+    return cleaned_texts
+
+# ================== CLEANSING for model prediction   ==========================
+# No abusive words removal
+
 def cleansing_model (data_input,i ):
 
-    if i == 1:
+    # Teks cleansing model
+    if i == 1:  
         text1 = data_input.lower()
         text1 = remove_unnecessary_char(text1)
         text1 = remove_words_starting_with_x(text1)
@@ -183,6 +236,7 @@ def cleansing_model (data_input,i ):
         text1 = stopwordsremoval(text1)
         cleaned_texts = stemming_words(text1)
 
+    # File cleansing model 
     if i ==2:
         cleaned_texts = []
         for text in data_input:
@@ -196,46 +250,82 @@ def cleansing_model (data_input,i ):
 
     return cleaned_texts
 
-# Load the trained vectorizer and model
-vectorizer_nn = pickle.load(open("feature_nn.p", "rb"))
-model_nn = pickle.load(open("model_nn.p", "rb"))
+# ================== Neural-Network   ==========================
 
-# =========================================================================
+# Load the trained vectorizer and model NN 
+vectorizer = pickle.load(open("feature.p", "rb"))
+model_NN = pickle.load(open("model.p", "rb"))  # -->> bisa ganti model
 
 # PREDICTION MODEL Neural-Network
-def prediction_sentiment_NN(text_bersih, vectorizer_nn, model_nn, y):
-
-    # processed_text = cleansing_model(text)
-    # Vectorize the preprocessed text
+def prediction_sentiment_NN(text_bersih, vectorizer, model, y):
     
     if y==1 :
-        text_vectorized = vectorizer_nn.transform([text_bersih])
-        sentiment = model_nn.predict(text_vectorized)[0]
+        text_vectorized = vectorizer.transform([text_bersih])
+        sentiment = model.predict(text_vectorized)[0]
     if y==2 :
-        text_vectorized = vectorizer_nn.transform(text_bersih)
-        sentiment = model_nn.predict(text_vectorized)
+        text_vectorized = vectorizer.transform(text_bersih)
+        sentiment = model.predict(text_vectorized)
     return sentiment
+
+# ===================    LSTM    ==================================
+
+# Load the trained vectorizer and model LSTM
+sentiment = ['negative', 'neutral', 'positive']
+model_LSTM = load_model('model.h5')  # -->> bisa ganti model
+
+# PREDICTION OF MODEL LSTM 
+def prediction_sentiment_LSTM(text_bersih, model, z):
+    # Load tokenizer from tokenizer.pickle
+    with open('tokenizer.pickle', 'rb') as handle:
+        tokenizer = pickle.load(handle)
+
+    # Load X from x_pad_sequences.pickle
+    with open('x_pad_sequences.pickle', 'rb') as handle:
+        X = pickle.load(handle)
+
+    predicted_sentiments = []
+    if z == 1 :     # Text processing
+        predicted = tokenizer.texts_to_sequences(text_bersih)
+        guess = pad_sequences(predicted, maxlen=X.shape[1])
+
+        prediction = model.predict(guess)
+        polarity = np.argmax(prediction[0])
+        predicted_sentiments = sentiment[polarity]
+
+    elif z == 2 :   # File processing 
+        for text in text_bersih:
+            predicted = tokenizer.texts_to_sequences([text])
+            guess = pad_sequences(predicted, maxlen=X.shape[1])
+
+            prediction = model.predict(guess)
+            polarity = np.argmax(prediction[0])
+            predicted_sentiments.append(sentiment[polarity])
+
+    return predicted_sentiments
+
+# =========================================================================
 
 @app.route('/')
 def default_route():
     return jsonify({'message': 'Welcome to the Platinum Challenge Kelompok 3-DSC 15!'})
 
 @swag_from("docs/text_processing.yml", methods=['POST'])
-@app.route('/text-processing', methods=['POST'])
-def text_processing():
+@app.route('/text-processing_NN', methods=['POST'])
+def text_processing_NN():
 
     text_p = request.form.get('text')
     processed_text = cleansing_model(text_p, 1)
-    prediction = prediction_sentiment_NN(processed_text,vectorizer_nn, model_nn, 1)
+    clean_text = cleansing_ouput(text_p, 1)
+    prediction = prediction_sentiment_NN(processed_text, vectorizer, model_NN, 1)
 
     #HOW TO DO THE DATABASE?
-    create_and_insert_into_db(text_p, processed_text, prediction, 1)
+    create_and_insert_into_db(text_p, clean_text, prediction, 1)
 
     json_response = {
         'status_code': 200,
         'description': "Teks yang sudah diproses",
         'data': text_p, 
-        'clean_data' : processed_text,
+        'clean_data' : clean_text,
         'Sentiment' : prediction.tolist(),
     }
 
@@ -243,9 +333,33 @@ def text_processing():
 
     return response_data
 
+@swag_from("docs/text_processing.yml", methods=['POST'])
+@app.route('/text-processing_LSTM', methods=['POST'])
+def text_processing_LSTM():
+
+    text_p = request.form.get('text')
+    processed_text = cleansing_model(text_p, 1)
+    clean_text = cleansing_ouput(text_p, 1)
+    prediction = prediction_sentiment_LSTM(processed_text, model_LSTM, 1)
+
+    #HOW TO DO THE DATABASE?
+    create_and_insert_into_db(text_p, clean_text, prediction, 1)
+
+    json_response = {
+        'status_code': 200,
+        'description': "Teks yang sudah diproses",
+        'data': text_p, 
+        'clean_data' : clean_text,
+        'Sentiment' : prediction,
+    }
+
+    response_data = jsonify(json_response)
+
+    return response_data
+
 @swag_from("docs/text_processing_file.yml", methods=['POST'])
-@app.route('/text-processing-file', methods=['POST'])
-def text_processing_file():
+@app.route('/text-processing-file_NN', methods=['POST'])
+def text_processing_file_NN():
     
     # Uploaded file
     uploaded_file = request.files.getlist('file')[0]
@@ -272,11 +386,66 @@ def text_processing_file():
         raw_text.extend(texts)
         
         # Perform cleansing on texts
-        cleaned_chunk = cleansing_model(texts, 2)
+        cleaned_chunk_model = cleansing_model(texts, 2)
+        cleaned_chunk = cleansing_ouput(texts, 2)
         cleaned_text.extend(cleaned_chunk)
         
         # Predict sentiment for each cleaned text chunk
-        chunk_predictions = prediction_sentiment_NN(cleaned_chunk, vectorizer, model, 2)
+        chunk_predictions = prediction_sentiment_NN(cleaned_chunk_model, vectorizer, model_NN, 2)
+        predict_file.extend(chunk_predictions)
+    
+    # Store cleaned data into the SQLite database
+    create_and_insert_into_db(raw_text, cleaned_text, predict_file, 2) 
+
+    # Remove the temporary file
+    os.remove(temp_file_path)
+
+    json_response = {
+        'status_code': 200,
+        'description': "Teks yang sudah diproses",
+        'data': raw_text, 
+        'clean_data' : cleaned_text,
+        'Sentiment' : predict_file,
+    }
+
+    response_data = jsonify(json_response)
+    return response_data
+
+@swag_from("docs/text_processing_file.yml", methods=['POST'])
+@app.route('/text-processing-file_LSTM', methods=['POST'])
+def text_processing_file_LSTM():
+    
+    # Uploaded file
+    uploaded_file = request.files.getlist('file')[0]
+
+    # Save the file to a temporary location
+    temp_file_path = tempfile.mktemp(suffix=".csv", dir=tempfile.gettempdir())
+    uploaded_file.save(temp_file_path)
+
+    # Determine the index of the first non-empty column
+    first_column_index = get_first_non_empty_column(temp_file_path)
+
+    # Define chunk size
+    chunk_size = 13170  # Adjust as needed
+
+    # Process the file in chunks
+    cleaned_text = []
+    raw_text = [] 
+    predict_file = []
+    for chunk in pd.read_csv(temp_file_path, chunksize=chunk_size, encoding='latin1'):  
+        # Extract texts from the DataFrame
+        column_name = chunk.columns[first_column_index]
+        texts = chunk[column_name].tolist()
+        # Store raw text
+        raw_text.extend(texts)
+        
+        # Perform cleansing on texts
+        cleaned_chunk_model = cleansing_model(texts, 2)
+        cleaned_chunk = cleansing_ouput(texts, 2)
+        cleaned_text.extend(cleaned_chunk)
+        
+        # Predict sentiment for each cleaned text chunk
+        chunk_predictions = prediction_sentiment_LSTM(cleaned_chunk_model, model_LSTM, 2)
         predict_file.extend(chunk_predictions)
     
     # Store cleaned data into the SQLite database
